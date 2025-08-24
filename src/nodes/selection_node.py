@@ -32,6 +32,19 @@ def select_clips_node(state: PodcastState) -> PodcastState:
         # Load configuration
         app_config = AppConfig.from_env()
         
+        # Apply custom configuration overrides from state
+        custom_config = state.get("config", {})
+        if custom_config:
+            # Override specific values if provided
+            if "max_clips_per_video" in custom_config:
+                app_config.processing.max_clips_per_video = custom_config["max_clips_per_video"]
+            if "target_clip_duration" in custom_config:
+                app_config.processing.target_clip_duration = custom_config["target_clip_duration"]
+            if "min_clip_duration" in custom_config:
+                app_config.processing.min_clip_duration = custom_config["min_clip_duration"]
+            if "max_clip_duration" in custom_config:
+                app_config.processing.max_clip_duration = custom_config["max_clip_duration"]
+        
         print(f"🎯 Validating {len(identified_clips)} clips from full transcript analysis")
         
         # Convert back to VideoSegment objects
