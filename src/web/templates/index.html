@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Podcast Clips Generator - Home{% endblock %}
+
+{% block content %}
+{% if videos %}
+    <h2 style="margin-bottom: 1.5rem; color: #333;">📹 Processed Videos ({{ videos|length }})</h2>
+    
+    <div class="video-grid">
+        {% for video in videos %}
+        <div class="card">
+            <h3 style="margin-bottom: 1rem; color: #333;">{{ video.title }}</h3>
+            
+            <div class="meta-info">
+                <div class="meta-item">
+                    <div class="meta-label">Duration</div>
+                    <div class="meta-value">{{ video.duration|duration }}</div>
+                </div>
+                
+                <div class="meta-item">
+                    <div class="meta-label">Channel</div>
+                    <div class="meta-value">{{ video.uploader }}</div>
+                </div>
+                
+                <div class="meta-item">
+                    <div class="meta-label">Clips Generated</div>
+                    <div class="meta-value">{{ video.clip_count }}</div>
+                </div>
+                
+                <div class="meta-item">
+                    <div class="meta-label">Processed</div>
+                    <div class="meta-value">{{ video.created_at|datetime }}</div>
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                {% if video.status == 'metadata_generated' or video.status == 'clips_generated' %}
+                    <span class="status status-success">✅ Complete</span>
+                {% elif video.status == 'clips_selected' %}
+                    <span class="status status-warning">⚠️ Analysis Only</span>
+                {% else %}
+                    <span class="status status-error">❌ {{ video.status|title }}</span>
+                {% endif %}
+            </div>
+            
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <a href="{{ url_for('video_details', video_id=video.video_id) }}" class="btn">
+                    📋 View Details
+                </a>
+                
+                {% if video.clip_count > 0 %}
+                    <a href="{{ url_for('video_details', video_id=video.video_id) }}" class="btn btn-download">
+                        🎬 View Clips ({{ video.clip_count }})
+                    </a>
+                {% endif %}
+                
+                {% if video.url %}
+                    <a href="{{ video.url }}" target="_blank" class="btn btn-small" style="background: #ff0000;">
+                        🔗 Original Video
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <div style="margin-top: 3rem; padding: 2rem; background: white; border-radius: 12px; text-align: center;">
+        <h3 style="margin-bottom: 1rem; color: #333;">🚀 Process New Video</h3>
+        <p style="color: #666; margin-bottom: 1rem;">
+            To process a new YouTube video, use the command line:
+        </p>
+        <code style="background: #f8f9fa; padding: 10px; border-radius: 6px; display: inline-block;">
+            python main.py process "https://youtube.com/watch?v=VIDEO_ID"
+        </code>
+    </div>
+    
+{% else %}
+    <div class="empty-state">
+        <h2>🎬 No Videos Processed Yet</h2>
+        <p style="margin-bottom: 2rem;">
+            Get started by processing your first YouTube video!
+        </p>
+        
+        <div style="background: white; border-radius: 12px; padding: 2rem; max-width: 600px; margin: 0 auto;">
+            <h3 style="margin-bottom: 1rem; color: #333;">Quick Start</h3>
+            
+            <div style="text-align: left;">
+                <p style="margin-bottom: 1rem;"><strong>1. Activate your environment:</strong></p>
+                <code style="background: #f8f9fa; padding: 10px; border-radius: 6px; display: block; margin-bottom: 1rem;">
+                    source venv/bin/activate
+                </code>
+                
+                <p style="margin-bottom: 1rem;"><strong>2. Process a video:</strong></p>
+                <code style="background: #f8f9fa; padding: 10px; border-radius: 6px; display: block; margin-bottom: 1rem;">
+                    python main.py process "https://youtube.com/watch?v=VIDEO_ID"
+                </code>
+                
+                <p style="margin-bottom: 1rem;"><strong>3. View results:</strong></p>
+                <p style="color: #666;">
+                    Refresh this page once processing is complete to see your generated clips!
+                </p>
+            </div>
+        </div>
+    </div>
+{% endif %}
+{% endblock %} 
