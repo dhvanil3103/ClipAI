@@ -34,16 +34,17 @@ def select_clips_node(state: PodcastState) -> PodcastState:
         
         # Apply custom configuration overrides from state
         custom_config = state.get("config", {})
+        
+        # Use custom values directly, fallback to sensible defaults
+        max_clips_per_video = custom_config.get("max_clips_per_video", 3)
+        target_clip_duration = custom_config.get("target_clip_duration", 30)
+        min_clip_duration = max(10, target_clip_duration - 10)  # Allow 10s tolerance below target
+        max_clip_duration = target_clip_duration + 15  # Allow 15s tolerance above target
+        min_engagement_score = app_config.processing.min_engagement_score
+        
+        print(f"🔧 Selection Config - Clips: {max_clips_per_video}, Target: {target_clip_duration}s, Range: {min_clip_duration}-{max_clip_duration}s")
         if custom_config:
-            # Override specific values if provided
-            if "max_clips_per_video" in custom_config:
-                app_config.processing.max_clips_per_video = custom_config["max_clips_per_video"]
-            if "target_clip_duration" in custom_config:
-                app_config.processing.target_clip_duration = custom_config["target_clip_duration"]
-            if "min_clip_duration" in custom_config:
-                app_config.processing.min_clip_duration = custom_config["min_clip_duration"]
-            if "max_clip_duration" in custom_config:
-                app_config.processing.max_clip_duration = custom_config["max_clip_duration"]
+            print(f"🔧 Raw custom config: {custom_config}")
         
         print(f"🎯 Validating {len(identified_clips)} clips from full transcript analysis")
         
@@ -56,16 +57,16 @@ def select_clips_node(state: PodcastState) -> PodcastState:
         for clip in clips:
             # Validate duration
             duration = clip.end_time - clip.start_time
-            if duration < app_config.processing.min_clip_duration:
+            if duration < min_clip_duration:
                 print(f"⚠️  Skipping clip {clip.start_time:.1f}s-{clip.end_time:.1f}s: too short ({duration:.1f}s)")
                 continue
             
-            if duration > app_config.processing.max_clip_duration:
+            if duration > max_clip_duration:
                 print(f"⚠️  Skipping clip {clip.start_time:.1f}s-{clip.end_time:.1f}s: too long ({duration:.1f}s)")
                 continue
             
             # Validate score (should already be high from analysis)
-            if clip.score < app_config.processing.min_engagement_score:
+            if clip.score < min_engagement_score:
                 print(f"⚠️  Skipping clip {clip.start_time:.1f}s-{clip.end_time:.1f}s: low score ({clip.score:.1f})")
                 continue
             
@@ -77,8 +78,7 @@ def select_clips_node(state: PodcastState) -> PodcastState:
         validated_clips.sort(key=lambda x: x.score, reverse=True)
         
         # Take the requested number of clips
-        max_clips = app_config.processing.max_clips_per_video
-        selected_clips = validated_clips[:max_clips]
+        selected_clips = validated_clips[:max_clips_per_video]
         
         print(f"🎬 Selected {len(selected_clips)} final clips")
         

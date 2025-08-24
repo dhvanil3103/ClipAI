@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import uuid
+import glob
 from typing import Dict, List
 import sys
 from pathlib import Path
@@ -34,7 +35,7 @@ app.add_middleware(
 )
 
 # Mount static files for serving video clips
-app.mount("/clips", StaticFiles(directory="outputs"), name="clips")
+app.mount("/clips", StaticFiles(directory="../outputs"), name="clips")
 
 # Initialize the agent
 agent = PodcastClipsAgent()
@@ -91,8 +92,8 @@ async def process_video_background(youtube_url: str, session_id: str, num_clips:
         custom_config = {
             'max_clips_per_video': num_clips,
             'target_clip_duration': clip_duration,
-            'min_clip_duration': max(25, clip_duration - 15),
-            'max_clip_duration': clip_duration + 15,
+            'min_clip_duration': max(10, clip_duration - 10),  # 10s minimum, allow 10s below target
+            'max_clip_duration': clip_duration + 15,           # Allow 15s above target
             'api_rate_limit_delay': 5.0
         }
         
@@ -155,14 +156,30 @@ async def process_video_background(youtube_url: str, session_id: str, num_clips:
                     actual_thumbnail_path = proc_data.get('thumbnail_path', '')
                     
                     # Convert absolute paths to relative URLs for the frontend
-                    if actual_video_path:
+                    if actual_video_path and os.path.exists(actual_video_path):
                         # Extract just the filename from the absolute path
                         video_filename = actual_video_path.split('/')[-1] if '/' in actual_video_path else actual_video_path
                         video_path = f"/clips/{video_id}/clips/{video_filename}"
                     else:
-                        # Fallback to expected filename
-                        sanitized_type = clip_type.replace('|', '_').replace(' ', '_')
-                        video_path = f"/clips/{video_id}/clips/clip_{i:02d}_{sanitized_type}.mp4"
+                        # Try to find the actual file in the clips directory
+                        clips_dir = f"../outputs/{video_id}/clips"
+                        if os.path.exists(clips_dir):
+                            import glob
+                            # Look for files that match the clip number pattern
+                            pattern = f"{clips_dir}/clip_{i:02d}_*.mp4"
+                            matching_files = glob.glob(pattern)
+                            if matching_files:
+                                # Use the first matching file
+                                video_filename = os.path.basename(matching_files[0])
+                                video_path = f"/clips/{video_id}/clips/{video_filename}"
+                            else:
+                                # Final fallback to expected filename
+                                sanitized_type = clip_type.replace('|', '_').replace(' ', '_')
+                                video_path = f"/clips/{video_id}/clips/clip_{i:02d}_{sanitized_type}.mp4"
+                        else:
+                            # Final fallback to expected filename
+                            sanitized_type = clip_type.replace('|', '_').replace(' ', '_')
+                            video_path = f"/clips/{video_id}/clips/clip_{i:02d}_{sanitized_type}.mp4"
                     
                     if actual_thumbnail_path:
                         # Use the actual thumbnail path

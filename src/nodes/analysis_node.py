@@ -43,17 +43,14 @@ def analyze_content_node(state: PodcastState) -> PodcastState:
         
         # Apply custom configuration overrides from state
         custom_config = state.get("config", {})
+        
+        # Use custom values directly, fallback to app_config defaults
+        max_clips_per_video = custom_config.get("max_clips_per_video", 3)
+        target_clip_duration = custom_config.get("target_clip_duration", 30)
+        
+        print(f"🔧 Analysis Config - Clips: {max_clips_per_video}, Duration: {target_clip_duration}s")
         if custom_config:
-            print(f"🔧 Using custom configuration: {custom_config}")
-            # Override specific values if provided
-            if "max_clips_per_video" in custom_config:
-                app_config.processing.max_clips_per_video = custom_config["max_clips_per_video"]
-            if "target_clip_duration" in custom_config:
-                app_config.processing.target_clip_duration = custom_config["target_clip_duration"]
-            if "min_clip_duration" in custom_config:
-                app_config.processing.min_clip_duration = custom_config["min_clip_duration"]
-            if "max_clip_duration" in custom_config:
-                app_config.processing.max_clip_duration = custom_config["max_clip_duration"]
+            print(f"🔧 Raw custom config received: {custom_config}")
         
         # Configure Gemini
         if not app_config.llm.api_key:
@@ -68,15 +65,15 @@ def analyze_content_node(state: PodcastState) -> PodcastState:
         print(f"📊 Analyzing complete transcript ({len(clean_text)} characters)")
         print(f"🎥 Video: {video_title}")
         print(f"⏱️  Duration: {video_duration/60:.1f} minutes")
-        print(f"🎯 Target: {app_config.processing.max_clips_per_video} clips ({app_config.processing.target_clip_duration}s each)")
+        print(f"🎯 Target: {max_clips_per_video} clips ({target_clip_duration}s each)")
         
         # Create the full transcript analysis prompt
         prompt = create_full_transcript_prompt(
             transcript_text=clean_text,
             video_title=video_title,
             video_duration=video_duration,
-            target_clips=app_config.processing.max_clips_per_video,
-            target_duration=app_config.processing.target_clip_duration
+            target_clips=max_clips_per_video,
+            target_duration=target_clip_duration
         )
         
         # Single API call to analyze the entire transcript
@@ -228,16 +225,77 @@ def parse_full_transcript_response(response_text: str, transcript_segments: List
                 json_end = len(cleaned_response)
             cleaned_response = cleaned_response[json_start:json_end].strip()
         
-        # Parse JSON
+        # Parse JSON with repair for truncated responses
         try:
             data = json.loads(cleaned_response)
-        except json.JSONDecodeError:
-            # Try to extract JSON from text if direct parsing fails
-            json_match = re.search(r'\{.*\}', cleaned_response, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
-            else:
-                raise ValueError("No valid JSON found in response")
+        except json.JSONDecodeError as e:
+            print(f"🔧 JSON parsing failed, attempting repair: {e}")
+            print(f"Response text (first 500 chars): {cleaned_response[:500]}...")
+            
+            # Try to repair truncated JSON
+            try:
+                # Find the clips array and try to close it properly
+                if '"clips": [' in cleaned_response:
+                    # Find where clips array starts
+                    clips_start = cleaned_response.find('"clips": [')
+                    before_clips = cleaned_response[:clips_start + 10]  # Include '"clips": ['
+                    
+                    # Find the last complete clip object
+                    clips_part = cleaned_response[clips_start + 10:]
+                    
+                    # Try to find complete clip objects by looking for closing braces
+                    complete_clips = []
+                    current_clip = ""
+                    brace_count = 0
+                    in_string = False
+                    escape_next = False
+                    
+                    for char in clips_part:
+                        if escape_next:
+                            escape_next = False
+                            current_clip += char
+                            continue
+                            
+                        if char == '\\':
+                            escape_next = True
+                            current_clip += char
+                            continue
+                            
+                        if char == '"' and not escape_next:
+                            in_string = not in_string
+                            
+                        if not in_string:
+                            if char == '{':
+                                brace_count += 1
+                            elif char == '}':
+                                brace_count -= 1
+                                
+                        current_clip += char
+                        
+                        # If we have a complete object, save it
+                        if brace_count == 0 and current_clip.strip().endswith('}'):
+                            complete_clips.append(current_clip.strip().rstrip(','))
+                            current_clip = ""
+                    
+                    # Reconstruct valid JSON
+                    if complete_clips:
+                        clips_json = ', '.join(complete_clips)
+                        repaired_json = f'{{"clips": [{clips_json}]}}'
+                        data = json.loads(repaired_json)
+                        print(f"✅ Repaired JSON successfully, found {len(data.get('clips', []))} clips")
+                    else:
+                        raise ValueError("Could not repair JSON")
+                else:
+                    raise ValueError("No clips array found in response")
+                    
+            except Exception as repair_error:
+                print(f"❌ JSON repair failed: {repair_error}")
+                # Last resort: try regex extraction
+                json_match = re.search(r'\{.*\}', cleaned_response, re.DOTALL)
+                if json_match:
+                    data = json.loads(json_match.group())
+                else:
+                    raise ValueError("No valid JSON found in response")
         
         # Extract clips from the response
         clips_data = data.get("clips", [])
