@@ -156,6 +156,13 @@ body {
   color: white;
 }
 
+/* Button Container */
+.button-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
 @media (max-width: 768px) {
   .settings-group {
     flex-direction: column;
