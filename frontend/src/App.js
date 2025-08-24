@@ -3,6 +3,8 @@ import './App.css';
 
 function App() {
   const [url, setUrl] = useState('');
+  const [numClips, setNumClips] = useState(3);
+  const [clipDuration, setClipDuration] = useState(60);
   const [status, setStatus] = useState('idle'); // idle, processing, completed, failed
   const [message, setMessage] = useState('');
   const [clips, setClips] = useState([]);
@@ -18,7 +20,11 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ youtube_url: url }),
+        body: JSON.stringify({ 
+          youtube_url: url,
+          num_clips: numClips,
+          clip_duration: clipDuration
+        }),
       });
 
       if (!response.ok) {
@@ -155,8 +161,8 @@ function App() {
   return (
     <div className="App">
       <header className="App-header">
-        <h1>🎬 Podcast Clip Generator</h1>
-        <p>Transform long videos into engaging short clips</p>
+        <h1>🎬 ClipAI - Smart Video Clip Generator</h1>
+        <p>Transform long videos into engaging short clips with AI</p>
       </header>
 
       <main className="App-main">
@@ -170,14 +176,58 @@ function App() {
               className="url-input"
               disabled={status === 'processing'}
             />
-            <button 
-              type="submit" 
-              className="submit-button"
-              disabled={!url || status === 'processing'}
-            >
-              {status === 'processing' ? 'Processing...' : 'Generate Clips'}
-            </button>
           </div>
+          
+          <div className="settings-group">
+            <div className="setting-item">
+              <label htmlFor="numClips">Number of Clips:</label>
+              <select
+                id="numClips"
+                value={numClips}
+                onChange={(e) => setNumClips(parseInt(e.target.value))}
+                disabled={status === 'processing'}
+                className="setting-input"
+              >
+                <option value={1}>1 clip</option>
+                <option value={2}>2 clips</option>
+                <option value={3}>3 clips</option>
+                <option value={4}>4 clips</option>
+                <option value={5}>5 clips</option>
+                <option value={6}>6 clips</option>
+                <option value={7}>7 clips</option>
+                <option value={8}>8 clips</option>
+                <option value={9}>9 clips</option>
+                <option value={10}>10 clips</option>
+              </select>
+            </div>
+            
+            <div className="setting-item">
+              <label htmlFor="clipDuration">Clip Duration:</label>
+              <select
+                id="clipDuration"
+                value={clipDuration}
+                onChange={(e) => setClipDuration(parseInt(e.target.value))}
+                disabled={status === 'processing'}
+                className="setting-input"
+              >
+                <option value={15}>15 seconds</option>
+                <option value={30}>30 seconds</option>
+                <option value={45}>45 seconds</option>
+                <option value={60}>60 seconds</option>
+                <option value={75}>75 seconds</option>
+                <option value={90}>90 seconds</option>
+                <option value={120}>2 minutes</option>
+              </select>
+            </div>
+          </div>
+          
+          <button 
+            type="submit" 
+            className="submit-button"
+            disabled={!url || status === 'processing'}
+          >
+            {status === 'processing' ? 'Processing...' : `Generate ${numClips} Clip${numClips > 1 ? 's' : ''}`}
+          </button>
         </form>
 
         {status !== 'idle' && (
