@@ -221,13 +221,15 @@ function App() {
             </div>
           </div>
           
-          <button 
-            type="submit" 
-            className="submit-button"
-            disabled={!url || status === 'processing'}
-          >
-            {status === 'processing' ? 'Processing...' : `Generate ${numClips} Clip${numClips > 1 ? 's' : ''}`}
-          </button>
+          <div className="button-container">
+            <button 
+              type="submit" 
+              className="submit-button"
+              disabled={!url || status === 'processing'}
+            >
+              {status === 'processing' ? 'Processing...' : `Generate ${numClips} Clip${numClips > 1 ? 's' : ''}`}
+            </button>
+          </div>
         </form>
 
         {status !== 'idle' && (
