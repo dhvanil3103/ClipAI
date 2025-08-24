@@ -87,16 +87,18 @@ async def process_video_background(youtube_url: str, session_id: str, num_clips:
         # Initial processing state
         await send_update("processing", "Processing your video... This may take a few minutes.")
         
-        # Set environment variables for processing
-        os.environ['MAX_CLIPS_PER_VIDEO'] = str(num_clips)
-        os.environ['TARGET_CLIP_DURATION'] = str(clip_duration)
-        os.environ['MIN_CLIP_DURATION'] = str(max(25, clip_duration - 15))
-        os.environ['MAX_CLIP_DURATION'] = str(clip_duration + 15)
-        os.environ['API_RATE_LIMIT_DELAY'] = '5.0'
+        # Create custom configuration
+        custom_config = {
+            'max_clips_per_video': num_clips,
+            'target_clip_duration': clip_duration,
+            'min_clip_duration': max(25, clip_duration - 15),
+            'max_clip_duration': clip_duration + 15,
+            'api_rate_limit_delay': 5.0
+        }
         
         def run_processing():
             try:
-                result = agent.process_video(youtube_url)
+                result = agent.process_video(youtube_url, config=custom_config)
                 return result
             except Exception as e:
                 raise e

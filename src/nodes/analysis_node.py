@@ -41,6 +41,20 @@ def analyze_content_node(state: PodcastState) -> PodcastState:
         # Load configuration
         app_config = AppConfig.from_env()
         
+        # Apply custom configuration overrides from state
+        custom_config = state.get("config", {})
+        if custom_config:
+            print(f"🔧 Using custom configuration: {custom_config}")
+            # Override specific values if provided
+            if "max_clips_per_video" in custom_config:
+                app_config.processing.max_clips_per_video = custom_config["max_clips_per_video"]
+            if "target_clip_duration" in custom_config:
+                app_config.processing.target_clip_duration = custom_config["target_clip_duration"]
+            if "min_clip_duration" in custom_config:
+                app_config.processing.min_clip_duration = custom_config["min_clip_duration"]
+            if "max_clip_duration" in custom_config:
+                app_config.processing.max_clip_duration = custom_config["max_clip_duration"]
+        
         # Configure Gemini
         if not app_config.llm.api_key:
             raise Exception("Google API key not configured")
@@ -54,7 +68,7 @@ def analyze_content_node(state: PodcastState) -> PodcastState:
         print(f"📊 Analyzing complete transcript ({len(clean_text)} characters)")
         print(f"🎥 Video: {video_title}")
         print(f"⏱️  Duration: {video_duration/60:.1f} minutes")
-        print(f"🎯 Target: {app_config.processing.max_clips_per_video} clips")
+        print(f"🎯 Target: {app_config.processing.max_clips_per_video} clips ({app_config.processing.target_clip_duration}s each)")
         
         # Create the full transcript analysis prompt
         prompt = create_full_transcript_prompt(
