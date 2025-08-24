@@ -104,6 +104,70 @@ body {
   transform: none;
 }
 
+/* Settings Group Styles */
+.settings-group {
+  display: flex;
+  gap: 1.5rem;
+  max-width: 600px;
+  margin: 1.5rem auto;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.setting-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 200px;
+}
+
+.setting-item label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: left;
+}
+
+.setting-input {
+  padding: 0.8rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+}
+
+.setting-input:focus {
+  outline: none;
+  border-color: #ffd700;
+  box-shadow: 0 0 0 2px rgba(255, 215, 0, 0.3);
+}
+
+.setting-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.setting-input option {
+  background: #333;
+  color: white;
+}
+
+@media (max-width: 768px) {
+  .settings-group {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .setting-item {
+    width: 100%;
+    max-width: 300px;
+  }
+}
+
 /* Status Section */
 .status-section {
   text-align: center;

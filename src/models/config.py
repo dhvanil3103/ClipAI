@@ -101,9 +101,10 @@ class AppConfig(BaseModel):
             output_directory=os.getenv('OUTPUT_DIRECTORY', 'outputs'),
             temp_directory=os.getenv('TEMP_DIRECTORY', 'temp'),
             processing=ProcessingConfig(
-                max_clips_per_video=int(os.getenv('MAX_CLIPS_PER_VIDEO')),
-                min_clip_duration=int(os.getenv('MIN_CLIP_DURATION')),
-                max_clip_duration=int(os.getenv('MAX_CLIP_DURATION')),
+                max_clips_per_video=int(os.getenv('MAX_CLIPS_PER_VIDEO', '3')),
+                min_clip_duration=int(os.getenv('MIN_CLIP_DURATION', '25')),
+                max_clip_duration=int(os.getenv('MAX_CLIP_DURATION', '90')),
+                target_clip_duration=int(os.getenv('TARGET_CLIP_DURATION', '60')),
                 api_rate_limit_delay=float(os.getenv('API_RATE_LIMIT_DELAY', '5.0'))
             ),
             video=VideoConfig(

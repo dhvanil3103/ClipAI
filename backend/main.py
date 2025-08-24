@@ -2,7 +2,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Back
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 import asyncio
 import json
 import os
@@ -45,13 +45,27 @@ active_sessions: Dict[str, WebSocket] = {}
 
 class VideoRequest(BaseModel):
     youtube_url: str
+    num_clips: int = 3
+    clip_duration: int = 60
+    
+    @validator('num_clips')
+    def validate_num_clips(cls, v):
+        if v < 1 or v > 10:
+            raise ValueError('num_clips must be between 1 and 10')
+        return v
+    
+    @validator('clip_duration')
+    def validate_clip_duration(cls, v):
+        if v < 15 or v > 120:
+            raise ValueError('clip_duration must be between 15 and 120 seconds')
+        return v
 
 class ProgressUpdate(BaseModel):
     status: str
     message: str
     clips: List = []
 
-async def process_video_background(youtube_url: str, session_id: str):
+async def process_video_background(youtube_url: str, session_id: str, num_clips: int = 3, clip_duration: int = 60):
     """Background task to process video - simplified without complex progress tracking"""
     
     async def send_update(status: str, message: str, clips: List = None):
@@ -74,7 +88,10 @@ async def process_video_background(youtube_url: str, session_id: str):
         await send_update("processing", "Processing your video... This may take a few minutes.")
         
         # Set environment variables for processing
-        os.environ['MAX_CLIPS_PER_VIDEO'] = '3'
+        os.environ['MAX_CLIPS_PER_VIDEO'] = str(num_clips)
+        os.environ['TARGET_CLIP_DURATION'] = str(clip_duration)
+        os.environ['MIN_CLIP_DURATION'] = str(max(25, clip_duration - 15))
+        os.environ['MAX_CLIP_DURATION'] = str(clip_duration + 15)
         os.environ['API_RATE_LIMIT_DELAY'] = '5.0'
         
         def run_processing():
@@ -194,7 +211,7 @@ async def process_video(request: VideoRequest, background_tasks: BackgroundTasks
     }
     
     # Start background processing
-    background_tasks.add_task(process_video_background, request.youtube_url, session_id)
+    background_tasks.add_task(process_video_background, request.youtube_url, session_id, request.num_clips, request.clip_duration)
     
     return {"session_id": session_id, "message": "Processing started"}
 
