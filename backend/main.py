@@ -1,31 +1,25 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from pydantic import BaseModel, validator
 import asyncio
+import concurrent.futures
+import glob
 import json
 import os
 import uuid
-import glob
-from typing import Dict, List
-import sys
 from pathlib import Path
-import concurrent.futures
+from typing import Dict, List
+
+from fastapi import BackgroundTasks, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, validator
+
+from .agent import PodcastClipsAgent
 
 # Disable LangSmith tracing to prevent 403 errors
 os.environ['LANGCHAIN_TRACING_V2'] = 'false'
 os.environ['LANGSMITH_TRACING'] = 'false'
 
-# Add current directory to Python path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-
-from src.agents.podcast_agent import PodcastClipsAgent
-from src.models.config import AppConfig
-
 app = FastAPI(title="Podcast Clips Generator", version="1.0.0")
 
-# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -34,234 +28,190 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files for serving video clips
-app.mount("/clips", StaticFiles(directory="../outputs"), name="clips")
+# Project root is two levels up from this file (backend/main.py → backend/ → project root)
+project_root = Path(__file__).parent.parent
+outputs_dir = project_root / "outputs"
+outputs_dir.mkdir(exist_ok=True)
 
-# Initialize the agent
+# Serve generated clip files at /clips
+app.mount("/clips", StaticFiles(directory=str(outputs_dir)), name="clips")
+
+# Initialise the agent once at startup
 agent = PodcastClipsAgent()
 
-# Global storage for processing status and WebSocket connections
 processing_status: Dict[str, dict] = {}
 active_sessions: Dict[str, WebSocket] = {}
+
 
 class VideoRequest(BaseModel):
     youtube_url: str
     num_clips: int = 3
     clip_duration: int = 60
-    
+
     @validator('num_clips')
     def validate_num_clips(cls, v):
         if v < 1 or v > 10:
             raise ValueError('num_clips must be between 1 and 10')
         return v
-    
+
     @validator('clip_duration')
     def validate_clip_duration(cls, v):
         if v < 15 or v > 120:
             raise ValueError('clip_duration must be between 15 and 120 seconds')
         return v
 
-class ProgressUpdate(BaseModel):
-    status: str
-    message: str
-    clips: List = []
 
-async def process_video_background(youtube_url: str, session_id: str, num_clips: int = 3, clip_duration: int = 60):
-    """Background task to process video - simplified without complex progress tracking"""
-    
-    async def send_update(status: str, message: str, clips: List = None):
-        update = {
-            "status": status,
-            "message": message,
-            "clips": clips or []
-        }
-        processing_status[session_id] = update
-        
-        # Send to WebSocket if connected
-        if session_id in active_sessions:
-            try:
-                await active_sessions[session_id].send_text(json.dumps(update))
-            except:
-                pass  # WebSocket might be disconnected
-    
+async def _send_update(session_id: str, status: str, message: str, clips: List = None):
+    """Persist the latest status and push it over WebSocket if the client is connected."""
+    update = {"status": status, "message": message, "clips": clips or []}
+    processing_status[session_id] = update
+    if session_id in active_sessions:
+        try:
+            await active_sessions[session_id].send_text(json.dumps(update))
+        except Exception:
+            pass
+
+
+async def process_video_background(
+    youtube_url: str,
+    session_id: str,
+    num_clips: int = 3,
+    clip_duration: int = 60,
+):
+    """Run the agent in a thread pool and relay progress via WebSocket."""
+
+    print(f"[{session_id}] Starting — {num_clips} clips × {clip_duration}s")
+
+    await _send_update(session_id, "processing", "Processing your video… This may take a few minutes.")
+
+    custom_config = {
+        'max_clips_per_video': num_clips,
+        'target_clip_duration': clip_duration,
+        'min_clip_duration': max(10, clip_duration - 10),
+        'max_clip_duration': clip_duration + 15,
+        'api_rate_limit_delay': 5.0,
+    }
+
+    def run_agent():
+        return agent.process_video(youtube_url, config=custom_config)
+
     try:
-        # Initial processing state
-        await send_update("processing", "Processing your video... This may take a few minutes.")
-        
-        # Create custom configuration
-        custom_config = {
-            'max_clips_per_video': num_clips,
-            'target_clip_duration': clip_duration,
-            'min_clip_duration': max(10, clip_duration - 10),  # 10s minimum, allow 10s below target
-            'max_clip_duration': clip_duration + 15,           # Allow 15s above target
-            'api_rate_limit_delay': 5.0
-        }
-        
-        def run_processing():
-            try:
-                result = agent.process_video(youtube_url, config=custom_config)
-                return result
-            except Exception as e:
-                raise e
-        
-        # Run the synchronous processing in a thread
         loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            result = await loop.run_in_executor(executor, run_processing)
-            
-            print("=== PROCESSING COMPLETE ===")
-            print(f"Result type: {type(result)}")
-            print(f"Result keys: {list(result.keys()) if hasattr(result, 'keys') else 'Not a dict'}")
-            
-            # Extract clip information from result
-            clips_info = []
-            processed_clips = result.get("processed_clips", [])
-            selected_clips = result.get("selected_clips", [])
-            video_id = result.get('video_id', 'unknown')
-            
-            print(f"Processing {len(processed_clips)} clips for video {video_id}")
-            print(f"Selected clips data: {len(selected_clips)} clips with metadata")
-            
-            for i, (processed_clip, selected_clip) in enumerate(zip(processed_clips, selected_clips), 1):
-                try:
-                    print(f"Processing clip {i}:")
-                    print(f"  Processed: {list(processed_clip.keys()) if hasattr(processed_clip, 'keys') else type(processed_clip)}")
-                    print(f"  Selected: {list(selected_clip.keys()) if hasattr(selected_clip, 'keys') else type(selected_clip)}")
-                    
-                    # Handle different clip data formats robustly
-                    if hasattr(processed_clip, 'dict'):
-                        proc_data = processed_clip.dict()
-                    elif hasattr(processed_clip, '__dict__'):
-                        proc_data = processed_clip.__dict__
+            result = await loop.run_in_executor(executor, run_agent)
+
+        video_id = result.get('video_id', 'unknown')
+        processed_clips = result.get("processed_clips", [])
+        selected_clips = result.get("selected_clips", [])
+        successful = [c for c in processed_clips if c.get("success", False)]
+
+        print(f"[{session_id}] Done — {len(successful)} successful clips for video {video_id}")
+
+        clips_info = []
+        for i, (proc, sel) in enumerate(zip(successful, selected_clips[:len(successful)]), 1):
+            try:
+                sel_data = sel.dict() if hasattr(sel, 'dict') else (sel.__dict__ if hasattr(sel, '__dict__') else sel)
+                proc_data = proc.dict() if hasattr(proc, 'dict') else (proc.__dict__ if hasattr(proc, '__dict__') else proc)
+
+                start_time = sel_data.get('start_time', 0)
+                end_time = sel_data.get('end_time', start_time + 30)
+                score = sel_data.get('score', 0)
+                clip_type = sel_data.get('segment_type', sel_data.get('type', 'unknown'))
+
+                # --- Video URL ---
+                actual_video_path = proc_data.get('output_path', '')
+                if actual_video_path and os.path.exists(actual_video_path):
+                    video_filename = os.path.basename(actual_video_path)
+                    video_url = f"/clips/{video_id}/clips/{video_filename}"
+                else:
+                    clips_dir = outputs_dir / video_id / "clips"
+                    pattern = str(clips_dir / f"clip_{i:02d}_*.mp4")
+                    matches = glob.glob(pattern)
+                    if matches:
+                        video_url = f"/clips/{video_id}/clips/{os.path.basename(matches[0])}"
                     else:
-                        proc_data = processed_clip
-                    
-                    # Get metadata from selected_clips (contains scores, types, etc.)
-                    if hasattr(selected_clip, 'dict'):
-                        sel_data = selected_clip.dict()
-                    elif hasattr(selected_clip, '__dict__'):
-                        sel_data = selected_clip.__dict__
+                        sanitized = clip_type.replace('|', '_').replace(' ', '_')
+                        video_url = f"/clips/{video_id}/clips/clip_{i:02d}_{sanitized}.mp4"
+
+                # --- Thumbnail URL ---
+                actual_thumb_path = proc_data.get('thumbnail_path', '')
+                if actual_thumb_path and os.path.exists(actual_thumb_path):
+                    # Convert absolute filesystem path → /clips/... URL
+                    thumb_str = str(actual_thumb_path)
+                    outputs_str = str(outputs_dir)
+                    if thumb_str.startswith(outputs_str):
+                        rel = thumb_str[len(outputs_str):].lstrip('/')
+                        thumbnail_url = f"/clips/{rel}"
                     else:
-                        sel_data = selected_clip
-                    
-                    # Extract clip info combining both data sources
-                    start_time = sel_data.get('start_time', 0)
-                    end_time = sel_data.get('end_time', start_time + 30)
-                    duration = end_time - start_time
-                    score = sel_data.get('score', 0)
-                    clip_type = sel_data.get('segment_type', sel_data.get('type', 'unknown'))
-                    
-                    # Get actual file paths from processed clip
-                    actual_video_path = proc_data.get('output_path', '')
-                    actual_thumbnail_path = proc_data.get('thumbnail_path', '')
-                    
-                    # Convert absolute paths to relative URLs for the frontend
-                    if actual_video_path and os.path.exists(actual_video_path):
-                        # Extract just the filename from the absolute path
-                        video_filename = actual_video_path.split('/')[-1] if '/' in actual_video_path else actual_video_path
-                        video_path = f"/clips/{video_id}/clips/{video_filename}"
-                    else:
-                        # Try to find the actual file in the clips directory
-                        clips_dir = f"../outputs/{video_id}/clips"
-                        if os.path.exists(clips_dir):
-                            import glob
-                            # Look for files that match the clip number pattern
-                            pattern = f"{clips_dir}/clip_{i:02d}_*.mp4"
-                            matching_files = glob.glob(pattern)
-                            if matching_files:
-                                # Use the first matching file
-                                video_filename = os.path.basename(matching_files[0])
-                                video_path = f"/clips/{video_id}/clips/{video_filename}"
-                            else:
-                                # Final fallback to expected filename
-                                sanitized_type = clip_type.replace('|', '_').replace(' ', '_')
-                                video_path = f"/clips/{video_id}/clips/clip_{i:02d}_{sanitized_type}.mp4"
-                        else:
-                            # Final fallback to expected filename
-                            sanitized_type = clip_type.replace('|', '_').replace(' ', '_')
-                            video_path = f"/clips/{video_id}/clips/clip_{i:02d}_{sanitized_type}.mp4"
-                    
-                    if actual_thumbnail_path:
-                        # Use the actual thumbnail path
-                        thumbnail_path = actual_thumbnail_path
-                        # Ensure it's a relative path for serving
-                        if thumbnail_path.startswith('/'):
-                            thumbnail_path = thumbnail_path[1:]  # Remove leading slash
-                    else:
-                        # Fallback to expected thumbnail path
-                        sanitized_type = clip_type.replace('|', '_').replace(' ', '_')
-                        thumbnail_path = f"outputs/{video_id}/thumbnails/clip_{i:02d}_{sanitized_type}_thumb.jpg"
-                    
-                    clip_info = {
-                        "id": f"clip_{i:02d}",
-                        "title": f"Clip {i}",
-                        "duration": f"{duration:.1f}s",
-                        "score": score,
-                        "type": clip_type,
-                        "video_path": video_path,
-                        "thumbnail_path": thumbnail_path
-                    }
-                    
-                    clips_info.append(clip_info)
-                    print(f"Added clip info: {clip_info}")
-                    
-                except Exception as e:
-                    print(f"Error processing clip {i}: {e}")
-                    print(f"  Processed clip data: {processed_clip}")
-                    print(f"  Selected clip data: {selected_clip}")
-                    continue
-            
-            # Send final completion update
-            await send_update("completed", f"Successfully generated {len(clips_info)} clips!", clips_info)
-            
+                        thumbnail_url = f"/clips/{video_id}/thumbnails/{os.path.basename(thumb_str)}"
+                else:
+                    sanitized = clip_type.replace('|', '_').replace(' ', '_')
+                    thumbnail_url = f"/clips/{video_id}/thumbnails/clip_{i:02d}_{sanitized}_thumb.jpg"
+
+                clips_info.append({
+                    "id": f"clip_{i:02d}",
+                    "title": f"Clip {i}",
+                    "duration": f"{end_time - start_time:.1f}s",
+                    "score": score,
+                    "type": clip_type,
+                    "video_path": video_url,
+                    "thumbnail_path": thumbnail_url,
+                })
+
+            except Exception as e:
+                print(f"[{session_id}] Error building clip {i} info: {e}")
+
+        await _send_update(
+            session_id,
+            "completed",
+            f"Successfully generated {len(clips_info)} clip{'s' if len(clips_info) != 1 else ''}!",
+            clips_info,
+        )
+
     except Exception as e:
-        print(f"❌ Error in background processing: {e}")
-        await send_update("failed", f"Processing failed: {str(e)}")
+        print(f"[{session_id}] Processing error: {e}")
+        await _send_update(session_id, "failed", f"Processing failed: {e}")
+
 
 @app.post("/api/process-video")
 async def process_video(request: VideoRequest, background_tasks: BackgroundTasks):
     session_id = str(uuid.uuid4())
-    
-    # Initialize processing status
-    processing_status[session_id] = {
-        "status": "starting",
-        "message": "Initializing...",
-        "clips": []
-    }
-    
-    # Start background processing
-    background_tasks.add_task(process_video_background, request.youtube_url, session_id, request.num_clips, request.clip_duration)
-    
+    processing_status[session_id] = {"status": "starting", "message": "Initialising…", "clips": []}
+    background_tasks.add_task(
+        process_video_background,
+        request.youtube_url,
+        session_id,
+        request.num_clips,
+        request.clip_duration,
+    )
     return {"session_id": session_id, "message": "Processing started"}
+
 
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()
     active_sessions[session_id] = websocket
-    
     try:
-        # Send current status if available
         if session_id in processing_status:
             await websocket.send_text(json.dumps(processing_status[session_id]))
-        
-        # Keep connection alive
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        if session_id in active_sessions:
-            del active_sessions[session_id]
+        active_sessions.pop(session_id, None)
+
 
 @app.get("/api/status/{session_id}")
 async def get_status(session_id: str):
     if session_id not in processing_status:
         raise HTTPException(status_code=404, detail="Session not found")
-    
     return processing_status[session_id]
+
 
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy"}
 
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=False)
