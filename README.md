@@ -1,264 +1,150 @@
-# 🎬 Podcast Clips Generator
+# Podcast Clips Generator
 
-An AI-powered tool that automatically transforms long-form YouTube podcasts into engaging short video clips using LangChain, LangGraph, and Google's Gemini AI.
+Turn long YouTube videos into short clips using transcripts, Google Gemini, LangGraph, yt-dlp, and MoviePy. The main runnable surface is a **FastAPI** backend; an optional **React** frontend can submit jobs and show results.
 
-## 🌟 Features
+## Features
 
-- **🤖 AI-Powered Analysis**: Uses Google Gemini 2.0 to analyze content and identify engaging moments
-- **📝 Free Transcript Fetching**: Leverages YouTube's built-in transcripts (no additional API costs)
-- **🎯 Smart Clip Selection**: Automatically selects the best clips while avoiding overlaps
-- **⚡ Fast Processing**: Optimized workflow processes most videos in minutes
-- **🎬 Multiple Formats**: Supports various aspect ratios (9:16 for Shorts, 16:9, 1:1, etc.)
-- **📊 Detailed Analytics**: Provides engagement scores and reasoning for each clip
+- **Transcripts** — Fetches captions via the YouTube Transcript API (manual or auto-generated English when available).
+- **Analysis** — Single-pass Gemini prompt over the full transcript to propose clip timestamps, scores, and reasoning.
+- **Selection** — Validates duration and score, then keeps the top N clips (configurable per request).
+- **Download** — yt-dlp with Android / mweb-style client settings to reduce DRM and playback-format breakage as YouTube changes behavior.
+- **Rendering** — MoviePy cuts segments, writes MP4s, and saves JPEG thumbnails under `outputs/<video_id>/`.
+- **Metadata** — Optional Gemini pass for titles, descriptions, and hashtags per clip.
+- **HTTP API** — REST + WebSocket for job status; static files served at `/clips` for generated media.
 
-## 🚀 Quick Start
+## Requirements
 
-### Prerequisites
+- Python 3.10+ (3.11 recommended; matches typical venv setups)
+- [FFmpeg](https://ffmpeg.org/) on `PATH` (used by MoviePy / imageio-ffmpeg)
+- **Google AI API key** with Gemini access ([Google AI Studio](https://aistudio.google.com/app/apikey))
 
-- Python 3.9+
-- Google API Key (free tier available)
-- FFmpeg (for future video processing)
+## Quick start (backend only)
 
-### Installation
-
-1. **Clone and setup environment:**
-   ```bash
-   git clone <repository>
-   cd podcast_to_shortvideos
-   python -m venv venv
-   source venv/bin/activate  # or `venv\Scripts\activate` on Windows
-   pip install -r requirements.txt
-   ```
-
-2. **Configure API key:**
-   ```bash
-   # Copy the environment template
-   cp env.template .env
-   
-   # Edit .env and add your Google API key:
-   # GOOGLE_API_KEY=your_gemini_api_key_here
-   ```
-
-3. **Get a Google API Key:**
-   - Visit [Google AI Studio](https://aistudio.google.com/app/apikey)
-   - Create a new API key
-   - Add it to your `.env` file
-
-4. **Verify setup:**
-   ```bash
-   python main.py setup
-   ```
-
-### Basic Usage
+From the **repository root** (so `outputs/` and `temp/` resolve correctly):
 
 ```bash
-# Process a YouTube video
-python main.py process "https://youtube.com/watch?v=VIDEO_ID"
+python -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install -r backend/requirements.txt
 
-# With custom options
-python main.py process "https://youtube.com/watch?v=VIDEO_ID" \
-  --max-clips 3 \
-  --min-duration 45 \
-  --max-duration 75 \
-  --aspect-ratio 9:16
+cp env.template .env
+# Edit .env and set GOOGLE_API_KEY
+
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
-## 📋 Current Status
+- Health: `GET http://localhost:8000/api/health`
+- Interactive docs: `http://localhost:8000/docs`
+- Start processing: `POST /api/process-video` with JSON body, for example:
 
-### ✅ Implemented (Phase 1 & 2)
-- **Environment Setup**: Virtual environment, dependencies, configuration
-- **Project Structure**: Organized codebase with proper separation of concerns
-- **YouTube Transcript Fetching**: Free, fast transcript extraction
-- **LangGraph Workflow**: Sophisticated state management and flow control
-- **AI Content Analysis**: Gemini-powered engagement analysis
-- **Smart Clip Selection**: Overlap detection and ranking algorithms
-- **CLI Interface**: User-friendly command-line tool
-
-### 🚧 In Development (Phase 3)
-- **Video Download & Processing**: yt-dlp integration for video files
-- **Clip Generation**: FFmpeg-based video segment extraction
-- **Caption Overlay**: Automatic subtitle generation
-- **Aspect Ratio Conversion**: Multiple format support
-
-### 🔮 Future Features (Phase 4+)
-- **Metadata Generation**: AI-powered titles, descriptions, hashtags
-- **Social Media Integration**: Direct uploads to platforms
-- **Advanced Analytics**: Performance prediction and optimization
-- **Custom Branding**: Logos, watermarks, brand colors
-
-## 🎬 How It Works
-
-### 1. Transcript Analysis
-```
-YouTube URL → Transcript Fetch → Content Chunking → AI Analysis
+```json
+{
+  "youtube_url": "https://www.youtube.com/watch?v=VIDEO_ID",
+  "num_clips": 3,
+  "clip_duration": 60
+}
 ```
 
-### 2. Content Scoring
-The AI analyzes each segment for:
-- **Hook Strength**: Attention-grabbing opening
-- **Value Density**: Actionable insights or entertainment
-- **Standalone Quality**: Comprehensible without context
-- **Emotional Impact**: Funny, surprising, or thought-provoking moments
+Poll `GET /api/status/{session_id}` or connect to `WebSocket /ws/{session_id}` for updates. Clips appear under `outputs/` and are exposed as URLs under `/clips/...`.
 
-### 3. Smart Selection
-- Filters by duration (30-90 seconds)
-- Ranks by engagement score and content diversity
-- Removes overlapping segments
-- Selects optimal clips for maximum impact
+## Full stack (backend + React)
 
-## 🛠️ Configuration
-
-### Environment Variables
 ```bash
-# API Keys
-GOOGLE_API_KEY=your_gemini_api_key_here
-LANGCHAIN_API_KEY=optional_langsmith_key
-
-# Processing Settings
-MAX_CLIPS_PER_VIDEO=5
-MIN_CLIP_DURATION=30
-MAX_CLIP_DURATION=90
-DEFAULT_ASPECT_RATIO=9:16
-
-# Output Settings
-OUTPUT_DIRECTORY=outputs
-TEMP_DIRECTORY=temp
+pip install -r backend/requirements.txt
+cd frontend && npm install && cd ..
+python start_app.py
 ```
 
-### Command Line Options
-```bash
-# Show current configuration
-python main.py config
+- Frontend: `http://localhost:3000`
+- API: `http://localhost:8000`
 
-# Process with custom settings
-python main.py process URL \
-  --output outputs/my_clips \
-  --max-clips 3 \
-  --min-duration 45 \
-  --max-duration 75 \
-  --aspect-ratio 9:16
-```
+`start_app.py` installs backend requirements, runs Uvicorn with `backend.main:app`, then starts the CRA dev server. See `WEBAPP_README.md` for more UI-oriented notes (some paths there may still mention the old `src/` layout).
 
-## 💰 Cost Optimization
+## Configuration
 
-### Free Tier Friendly
-- **YouTube Transcripts**: Completely free, no API limits
-- **Gemini 2.0**: Generous free tier with rate limiting
-- **Local Processing**: No cloud compute costs
+Copy `env.template` to `.env`. Common variables:
 
-### Best Practices
-- **Batch Processing**: Group multiple videos to optimize API usage
-- **Smart Caching**: Reuse transcripts and analysis results
-- **Rate Limiting**: Respectful API usage to stay within free limits
+| Variable | Purpose |
+|----------|---------|
+| `GOOGLE_API_KEY` | Required for Gemini (analysis + metadata). |
+| `OUTPUT_DIRECTORY` | Where clips and thumbnails are written (default `outputs`). |
+| `TEMP_DIRECTORY` | Where full downloads are stored before cutting (default `temp`). |
+| `MAX_CLIPS_PER_VIDEO`, `MIN_CLIP_DURATION`, `MAX_CLIP_DURATION`, `TARGET_CLIP_DURATION` | Defaults used when building `AppConfig` from the environment. |
+| `API_RATE_LIMIT_DELAY` | Seconds between Gemini calls in the metadata step. |
+| `LANGCHAIN_TRACING_V2` | Set `false` if you do not use LangSmith (backend also disables tracing in code). |
 
-## 📁 Project Structure
+The HTTP API can override clip count and target duration per job via `num_clips` and `clip_duration` on `POST /api/process-video`.
+
+Default Gemini model name is set in `backend/models.py` (`LLMConfig.model_name`, e.g. `gemini-2.5-flash`). Change it there or extend config loading if you need env-based overrides.
+
+## Project structure
 
 ```
 podcast_to_shortvideos/
-├── src/
-│   ├── agents/          # LangGraph agents
-│   │   └── podcast_agent.py
-│   ├── nodes/           # Individual workflow nodes
-│   │   ├── transcript_node.py
-│   │   ├── analysis_node.py
-│   │   └── selection_node.py
-│   ├── utils/           # Utility functions
-│   │   ├── transcript.py
-│   │   └── video_utils.py
-│   ├── models/          # Data models
-│   │   ├── state.py
-│   │   └── config.py
-│   └── cli.py           # Command-line interface
-├── outputs/             # Generated clips
-├── temp/                # Temporary files
-├── cache/               # Cached data
-├── requirements.txt     # Dependencies
-├── env.template         # Environment template
-└── main.py             # Entry point
+├── backend/
+│   ├── main.py          # FastAPI app, WebSocket, static /clips mount
+│   ├── agent.py         # LangGraph workflow (PodcastClipsAgent)
+│   ├── nodes.py         # Transcript, analysis, selection, download, clips, metadata
+│   ├── models.py        # Pydantic models, AppConfig, PodcastState
+│   └── requirements.txt # Server + pipeline dependencies
+├── frontend/            # Create React App UI (optional)
+├── start_app.py         # Launches backend + frontend
+├── env.template         # Example environment file
+├── requirements.txt     # Broader / legacy deps (CLI-era); backend list is authoritative for the API
+└── main.py              # Legacy entry point (imports removed `src.cli`; use Uvicorn for the app)
 ```
 
-## 🔧 Development
+## How the pipeline works
 
-### Running Tests
+1. **Fetch transcript** — Resolve video id, pull English transcript segments, optional metadata via yt-dlp.
+2. **Analyze** — Send cleaned transcript + targets to Gemini; parse JSON clip list.
+3. **Select** — Filter by duration and minimum score; cap at `max_clips_per_video`.
+4. **Download** — yt-dlp writes a full video under `TEMP_DIRECTORY`.
+5. **Generate clips** — MoviePy subclips, encode MP4, write thumbnails.
+6. **Metadata** — Per-clip Gemini calls for social-style text (with rate limiting).
+
+Graph routing stops early if a step fails (e.g. no transcript, download error).
+
+## Troubleshooting
+
+**Google API key errors**  
+Ensure `.env` exists at the project root, contains `GOOGLE_API_KEY`, and the process cwd is the repo root so `python-dotenv` can load it (models call `load_dotenv()`).
+
+**YouTube: DRM / “video is DRM protected” / nsig warnings**  
+YouTube changes players and clients often. Upgrade yt-dlp regularly:
+
 ```bash
-# Test transcript functionality
-python -c "from src.utils.transcript import fetch_youtube_transcript; print('✅ Imports working')"
-
-# Test configuration
-python main.py config
-
-# Test with a sample video
-python main.py process "https://youtube.com/watch?v=dQw4w9WgXcQ"
+pip install -U yt-dlp
 ```
 
-### Adding New Features
-1. **New Nodes**: Add to `src/nodes/` and register in the agent
-2. **Utilities**: Add helper functions to `src/utils/`
-3. **Configuration**: Extend models in `src/models/config.py`
-4. **CLI Commands**: Add to `src/cli.py`
+The code prefers Android / mweb extractor settings; some videos still need a very new yt-dlp build or may be restricted.
 
-## 🤝 Contributing
+**MoviePy: missing methods (e.g. `subclipped`)**  
+Use `moviepy>=2.1.0` as in `backend/requirements.txt`; reinstall if an older pin was installed:
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+```bash
+pip install -U "moviepy>=2.1.0"
+```
 
-## 📄 License
+**FFmpeg not found**  
+Install system FFmpeg and ensure it is on `PATH` (e.g. `brew install ffmpeg` on macOS).
 
-MIT License - see LICENSE file for details.
+**No transcript**  
+The video must expose an English transcript (manual or auto-generated). Private, age-restricted, or transcript-disabled videos will fail at the transcript step.
 
-## 🆘 Troubleshooting
+**Import / module errors when starting the server**  
+Run Uvicorn from the repository root: `uvicorn backend.main:app ...` so `backend` is importable as a package.
 
-### Common Issues
+## Cost notes
 
-**"Google API key not found"**
-- Ensure you've copied `env.template` to `.env`
-- Add your Google API key to the `.env` file
-- Source the environment: `source .env`
+- YouTube transcripts: no extra API cost beyond normal YouTube access.
+- Gemini: billed per your Google AI / Cloud plan; this project uses multiple text calls per video (one large analysis + optional metadata per clip).
+- Compute: local CPU/GPU for download and encoding; no required cloud runtime beyond the Gemini API.
 
-**"No transcripts found"**
-- Video may not have auto-generated transcripts
-- Try with popular videos that likely have transcripts
-- Check if the video is public and accessible
+## License
 
-**"FFmpeg not found"**
-- Install FFmpeg: `brew install ffmpeg` (macOS) or see [FFmpeg installation guide](https://ffmpeg.org/download.html)
+MIT License — see LICENSE if present in the repository.
 
-**"Import errors"**
-- Ensure virtual environment is activated
-- Run `pip install -r requirements.txt`
-- Check Python version (3.9+ required)
+## Contributing
 
-### Getting Help
-
-- Check the [GitHub Issues](link-to-issues) for common problems
-- Review the troubleshooting section in the CLI: `python main.py setup`
-- Join our [Discord community](link-to-discord) for support
-
-## 🎯 Roadmap
-
-### Q1 2024
-- [ ] Complete video generation pipeline
-- [ ] Add caption overlays
-- [ ] Support multiple aspect ratios
-
-### Q2 2024
-- [ ] Metadata generation with AI
-- [ ] Thumbnail creation
-- [ ] Performance analytics
-
-### Q3 2024
-- [ ] Social media integrations
-- [ ] Batch processing
-- [ ] Custom branding
-
-### Q4 2024
-- [ ] Advanced AI models
-- [ ] Real-time processing
-- [ ] Enterprise features
-
----
-
-Made with ❤️ by the Podcast Clips team. Star ⭐ this repo if you find it useful! 
+Fork the repository, create a branch, make focused changes, and open a pull request with a clear description of behavior and any new configuration.
