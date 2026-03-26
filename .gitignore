@@ -40,6 +40,10 @@ temp/
 *.tmp
 *.temp
 
+# MoviePy temp audio files
+temp-audio.m4a
+temp-audio.wav
+
 # Output files
 outputs/
 *.mp4
