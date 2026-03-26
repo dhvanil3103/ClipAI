@@ -13,7 +13,6 @@ from typing import Dict, List, Optional, Tuple
 
 import google.generativeai as genai
 import yt_dlp
-from langchain_community.document_loaders import YoutubeLoader
 from moviepy import ColorClip, CompositeVideoClip, VideoFileClip
 from youtube_transcript_api import YouTubeTranscriptApi
 
@@ -75,13 +74,16 @@ def fetch_transcript_node(state: PodcastState) -> PodcastState:
         video_id = extract_video_id(url)
         print(f"Fetching transcript for video: {video_id}")
 
-        # --- Video metadata ---
+        # --- Video metadata (via yt-dlp — pytube/YoutubeLoader is no longer reliable) ---
         try:
-            loader = YoutubeLoader.from_youtube_url(url, add_video_info=True)
-            docs = loader.load()
-            meta = docs[0].metadata if docs else {}
-            state["video_title"] = meta.get("title", "Unknown Title")
-            state["video_duration"] = float(meta.get("length", 0) or 0)
+            with yt_dlp.YoutubeDL({
+                'quiet': True,
+                'no_warnings': True,
+                'extractor_args': {'youtube': {'player_client': ['android', 'mweb']}},
+            }) as ydl:
+                info = ydl.extract_info(url, download=False)
+            state["video_title"] = info.get("title", "Unknown Title")
+            state["video_duration"] = float(info.get("duration", 0) or 0)
             state["video_id"] = video_id
             print(f"Video: {state['video_title']} ({state['video_duration']}s)")
         except Exception as e:
@@ -97,7 +99,7 @@ def fetch_transcript_node(state: PodcastState) -> PodcastState:
         print(f"Length: {len(full_transcript)} chars, {len(segments)} segments")
 
         state["transcript"] = full_transcript
-        state["transcript_segments"] = [s.dict() for s in segments]
+        state["transcript_segments"] = [s.model_dump() for s in segments]
         state["transcript_source"] = source
         state["status"] = "transcript_fetched"
 
@@ -215,7 +217,7 @@ def analyze_content_node(state: PodcastState) -> PodcastState:
         identified_clips = _parse_analysis_response(response.text, transcript_segments)
         print(f"Identified {len(identified_clips)} clips")
 
-        state["identified_clips"] = [c.dict() for c in identified_clips]
+        state["identified_clips"] = [c.model_dump() for c in identified_clips]
         state["status"] = "clips_identified"
 
     except Exception as e:
@@ -452,7 +454,7 @@ def select_clips_node(state: PodcastState) -> PodcastState:
 
         print(f"Selected {len(selected)} clips from {len(validated)} validated")
 
-        state["selected_clips"] = [c.dict() for c in selected]
+        state["selected_clips"] = [c.model_dump() for c in selected]
         state["status"] = "clips_selected"
         state["warnings"] = warnings
 
@@ -490,15 +492,17 @@ def download_video_node(state: PodcastState) -> PodcastState:
         video_output_template = str(temp_dir / f"{video_id}.%(ext)s")
 
         ydl_opts = {
+            # android client reliably bypasses DRM and SABR streaming restrictions
+            # that YouTube started enforcing on tv/web clients in late 2025
+            'extractor_args': {'youtube': {'player_client': ['android', 'mweb']}},
             'format': (
-                'bestvideo[height>=720][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]'
-                '/bestvideo[height>=480][ext=mp4]+bestaudio'
-                '/best[height>=720]/best[height>=480]/best'
+                'bestvideo[height>=720][ext=mp4]+bestaudio[ext=m4a]'
+                '/bestvideo[height>=480][ext=mp4]+bestaudio[ext=m4a]'
+                '/bestvideo+bestaudio/best'
             ),
             'outtmpl': video_output_template,
             'noplaylist': True,
             'merge_output_format': 'mp4',
-            'postprocessor_args': ['-movflags', '+faststart'],
             'prefer_ffmpeg': True,
             'writeinfojson': True,
             'writethumbnail': True,
@@ -656,9 +660,9 @@ def generate_clips_node(state: PodcastState) -> PodcastState:
                 )
 
                 processed_clips.append({
-                    **result.dict(),
+                    **result.model_dump(),
                     "clip_index": i,
-                    "segment_data": clip.dict(),
+                    "segment_data": clip.model_dump(),
                     "file_size_mb": size_mb,
                     "thumbnail_path": str(thumbnail_path),
                     "filename": clip_filename,
@@ -671,7 +675,7 @@ def generate_clips_node(state: PodcastState) -> PodcastState:
                 warnings.append(msg)
                 elapsed = time.time() - t0
                 processed_clips.append({
-                    **ProcessingResult(success=False, errors=[msg], processing_time=elapsed).dict(),
+                    **ProcessingResult(success=False, errors=[msg], processing_time=elapsed).model_dump(),
                     "clip_index": i,
                     "segment_data": clip_data,
                     "filename": f"failed_clip_{i}.mp4",
@@ -801,7 +805,7 @@ def generate_metadata_node(state: PodcastState) -> PodcastState:
                 metadata = _parse_metadata_response(response.text, clip_data)
 
                 if metadata:
-                    generated.append(metadata.dict())
+                    generated.append(metadata.model_dump())
                     print(f"  Clip {i}: metadata ready in {elapsed:.1f}s — {metadata.title[:60]}")
                 else:
                     warnings.append(f"Failed to parse metadata for clip {i}")

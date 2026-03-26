@@ -25,12 +25,17 @@ class VideoSegment(BaseModel):
     start_time: float = Field(description="Start time in seconds")
     end_time: float = Field(description="End time in seconds")
     content: str = Field(description="Transcript content for this segment")
-    score: float = Field(description="Engagement score (1-10)", ge=1, le=10)
+    score: float = Field(description="Engagement score (1-10)")
     reasoning: str = Field(description="Why this segment was selected")
     segment_type: str = Field(description="Type of content (insight, funny, controversial, etc.)")
     # Optional extra fields populated by the analysis node
     engagement_factors: Optional[str] = Field(default="", description="Hook / engagement factor summary")
     transcript_segments: Optional[List[Dict]] = Field(default_factory=list, description="Raw transcript segments in this range")
+
+    @validator('score')
+    def clamp_score(cls, v):
+        """Clamp score to 1–10; LLMs occasionally return values slightly outside this range."""
+        return max(1.0, min(10.0, float(v)))
 
 
 class ClipMetadata(BaseModel):

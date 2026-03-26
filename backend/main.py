@@ -96,7 +96,7 @@ async def process_video_background(
         return agent.process_video(youtube_url, config=custom_config)
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         with concurrent.futures.ThreadPoolExecutor() as executor:
             result = await loop.run_in_executor(executor, run_agent)
 
@@ -110,8 +110,8 @@ async def process_video_background(
         clips_info = []
         for i, (proc, sel) in enumerate(zip(successful, selected_clips[:len(successful)]), 1):
             try:
-                sel_data = sel.dict() if hasattr(sel, 'dict') else (sel.__dict__ if hasattr(sel, '__dict__') else sel)
-                proc_data = proc.dict() if hasattr(proc, 'dict') else (proc.__dict__ if hasattr(proc, '__dict__') else proc)
+                sel_data = sel.model_dump() if hasattr(sel, 'model_dump') else (sel.__dict__ if hasattr(sel, '__dict__') else sel)
+                proc_data = proc.model_dump() if hasattr(proc, 'model_dump') else (proc.__dict__ if hasattr(proc, '__dict__') else proc)
 
                 start_time = sel_data.get('start_time', 0)
                 end_time = sel_data.get('end_time', start_time + 30)
