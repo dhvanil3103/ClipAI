@@ -23,9 +23,10 @@ def start_backend():
         print(f"❌ Failed to install backend dependencies: {e}")
         return None
     
-    # Start backend
+    # Start backend (run as a module so relative imports in backend/ work correctly)
     backend_process = subprocess.Popen([
-        sys.executable, "backend/main.py"
+        sys.executable, "-m", "uvicorn", "backend.main:app",
+        "--host", "0.0.0.0", "--port", "8000"
     ], cwd=Path.cwd())
     
     print("✅ Backend started on http://localhost:8000")
