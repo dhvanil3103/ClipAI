@@ -14,7 +14,7 @@ function App() {
     setJob({ url, numClips, duration });
 
     try {
-      const response = await fetch('http://localhost:8000/api/process-video', {
+      const response = await fetch('process.env.REACT_APP_API_URL/api/process-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -40,7 +40,7 @@ function App() {
   useEffect(() => {
     if (!sessionId) return;
 
-    const websocket = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
+    const websocket = new WebSocket(`process.env.REACT_APP_WS_URL/ws/${sessionId}`);
 
     websocket.onopen = () => console.log('WebSocket connected');
 
@@ -67,7 +67,7 @@ function App() {
   const startStatusPolling = () => {
     const pollInterval = setInterval(async () => {
       try {
-        const response = await fetch(`http://localhost:8000/api/status/${sessionId}`);
+        const response = await fetch(`process.env.REACT_APP_API_URL/api/status/${sessionId}`);
         if (response.ok) {
           const data = await response.json();
           setStatus(data.status);
@@ -99,8 +99,8 @@ function App() {
     scoreColor: clip.score >= 95 ? 'tertiary' : 'secondary',
     tag: clip.type || 'AI GENERATED',
     tagColor: clip.score >= 95 ? 'tertiary' : clip.score >= 90 ? 'secondary' : 'primary',
-    thumbnail: clip.thumbnail_path ? `http://localhost:8000${clip.thumbnail_path}` : null,
-    videoPath: clip.video_path ? `http://localhost:8000${clip.video_path}` : null,
+    thumbnail: clip.thumbnail_path ? `process.env.REACT_APP_API_URL${clip.thumbnail_path}` : null,
+    videoPath: clip.video_path ? `process.env.REACT_APP_API_URL${clip.video_path}` : null,
   }));
 
   if (status === 'processing') {

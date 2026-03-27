@@ -22,7 +22,7 @@ app = FastAPI(title="Podcast Clips Generator", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[os.getenv("FRONTEND_URL")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -187,7 +187,7 @@ async def process_video(request: VideoRequest, background_tasks: BackgroundTasks
     return {"session_id": session_id, "message": "Processing started"}
 
 
-@app.websocket("/ws/{session_id}")
+@app.websocket("/wss/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()
     active_sessions[session_id] = websocket
