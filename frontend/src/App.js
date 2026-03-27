@@ -5,7 +5,7 @@ import Processing from './pages/Processing';
 import Results from './pages/Results';
 
 function App() {
-  const [status, setStatus] = useState('idle'); // idle, processing, completed, failed
+  const [status, setStatus] = useState('idle');
   const [clips, setClips] = useState([]);
   const [sessionId, setSessionId] = useState(null);
   const [job, setJob] = useState(null);
@@ -14,7 +14,7 @@ function App() {
     setJob({ url, numClips, duration });
 
     try {
-      const response = await fetch('process.env.REACT_APP_API_URL/api/process-video', {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/process-video`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -36,11 +36,10 @@ function App() {
     }
   };
 
-  // WebSocket for real-time updates
   useEffect(() => {
     if (!sessionId) return;
 
-    const websocket = new WebSocket(`process.env.REACT_APP_WS_URL/ws/${sessionId}`);
+    const websocket = new WebSocket(`${process.env.REACT_APP_WS_URL}/ws/${sessionId}`);
 
     websocket.onopen = () => console.log('WebSocket connected');
 
@@ -67,7 +66,7 @@ function App() {
   const startStatusPolling = () => {
     const pollInterval = setInterval(async () => {
       try {
-        const response = await fetch(`process.env.REACT_APP_API_URL/api/status/${sessionId}`);
+        const response = await fetch(`${process.env.REACT_APP_API_URL}/api/status/${sessionId}`);
         if (response.ok) {
           const data = await response.json();
           setStatus(data.status);
@@ -91,7 +90,6 @@ function App() {
     setClips([]);
   };
 
-  // Map backend clips to Results card format
   const mappedClips = clips.map((clip) => ({
     title: clip.title,
     duration: clip.duration,
@@ -99,8 +97,8 @@ function App() {
     scoreColor: clip.score >= 95 ? 'tertiary' : 'secondary',
     tag: clip.type || 'AI GENERATED',
     tagColor: clip.score >= 95 ? 'tertiary' : clip.score >= 90 ? 'secondary' : 'primary',
-    thumbnail: clip.thumbnail_path ? `process.env.REACT_APP_API_URL${clip.thumbnail_path}` : null,
-    videoPath: clip.video_path ? `process.env.REACT_APP_API_URL${clip.video_path}` : null,
+    thumbnail: clip.thumbnail_path ? `${process.env.REACT_APP_API_URL}${clip.thumbnail_path}` : null,
+    videoPath: clip.video_path ? `${process.env.REACT_APP_API_URL}${clip.video_path}` : null,
   }));
 
   if (status === 'processing') {
