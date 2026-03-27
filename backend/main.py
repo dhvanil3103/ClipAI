@@ -211,10 +211,10 @@ async def get_status(session_id: str):
 async def health_check():
     return {"status": "healthy"}
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
     return {"status": "ok"}
-    
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=False)
