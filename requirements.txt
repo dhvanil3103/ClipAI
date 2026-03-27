@@ -10,6 +10,7 @@ yt-dlp>=2025.8.0
 moviepy>=2.2.1
 youtube-transcript-api>=1.2.0
 pytube>=15.0.0
+imageio-ffmpeg>=0.4.9
 
 # Transcription Fallback (Optional)
 openai-whisper>=20231117

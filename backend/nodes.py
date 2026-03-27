@@ -15,7 +15,8 @@ import google.generativeai as genai
 import yt_dlp
 from moviepy import ColorClip, CompositeVideoClip, VideoFileClip
 from youtube_transcript_api import YouTubeTranscriptApi
-
+import imageio_ffmpeg
+os.environ["IMAGEIO_FFMPEG_EXE"] = imageio_ffmpeg.get_ffmpeg_exe()
 from .models import (
     AppConfig,
     ClipMetadata,
