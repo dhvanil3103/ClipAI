@@ -20,9 +20,14 @@ os.environ['LANGSMITH_TRACING'] = 'false'
 
 app = FastAPI(title="Podcast Clips Generator", version="1.0.0")
 
+origins = ["http://localhost:3000"]
+frontend_url = os.getenv("FRONTEND_URL")
+if frontend_url:
+    origins.append(frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("FRONTEND_URL")],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -62,7 +67,6 @@ class VideoRequest(BaseModel):
 
 
 async def _send_update(session_id: str, status: str, message: str, clips: List = None):
-    """Persist the latest status and push it over WebSocket if the client is connected."""
     update = {"status": status, "message": message, "clips": clips or []}
     processing_status[session_id] = update
     if session_id in active_sessions:
@@ -78,8 +82,6 @@ async def process_video_background(
     num_clips: int = 3,
     clip_duration: int = 60,
 ):
-    """Run the agent in a thread pool and relay progress via WebSocket."""
-
     print(f"[{session_id}] Starting — {num_clips} clips × {clip_duration}s")
 
     await _send_update(session_id, "processing", "Processing your video… This may take a few minutes.")
@@ -118,7 +120,6 @@ async def process_video_background(
                 score = sel_data.get('score', 0)
                 clip_type = sel_data.get('segment_type', sel_data.get('type', 'unknown'))
 
-                # --- Video URL ---
                 actual_video_path = proc_data.get('output_path', '')
                 if actual_video_path and os.path.exists(actual_video_path):
                     video_filename = os.path.basename(actual_video_path)
@@ -133,10 +134,8 @@ async def process_video_background(
                         sanitized = clip_type.replace('|', '_').replace(' ', '_')
                         video_url = f"/clips/{video_id}/clips/clip_{i:02d}_{sanitized}.mp4"
 
-                # --- Thumbnail URL ---
                 actual_thumb_path = proc_data.get('thumbnail_path', '')
                 if actual_thumb_path and os.path.exists(actual_thumb_path):
-                    # Convert absolute filesystem path → /clips/... URL
                     thumb_str = str(actual_thumb_path)
                     outputs_str = str(outputs_dir)
                     if thumb_str.startswith(outputs_str):
@@ -187,7 +186,7 @@ async def process_video(request: VideoRequest, background_tasks: BackgroundTasks
     return {"session_id": session_id, "message": "Processing started"}
 
 
-@app.websocket("/wss/{session_id}")
+@app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()
     active_sessions[session_id] = websocket
